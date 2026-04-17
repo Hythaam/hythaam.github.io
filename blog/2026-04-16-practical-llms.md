@@ -1,12 +1,11 @@
 ---
-slug: android-part
-title: Fundamentals of Android Development
-authors: [palash_programmer]
-tags: [android, development, fundamentals]
+slug: practical-llms
+title: Practical Local LLMs
+authors: [alex]
+tags: [ai,llm]
 draft: true
-description: The Android operating system is a multi-user Linux system in which each app is a different user.
+description: A practical guide to using local LLMs for development.
 hide_table_of_contents: false
-image: /img/palash_about-removebg-preview.png
 ---
 Android apps can be written using Kotlin, Java, and C++ languages.
 <!--truncate-->
@@ -79,6 +78,3 @@ Each type serves a distinct purpose and has a distinct lifecycle that defines ho
 * .keystore file
 * App Bundle
 * Playstore
-
-
-> Shantih     Shantih     Shantih

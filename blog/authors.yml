@@ -1,60 +1,6 @@
-palash:
-  name: Palash Shrivastava
-  title: Owner of Blogasaurus
-  url: https://github.com/battleofplassey
-  image_url: https://avatars.githubusercontent.com/u/35087196?v=4
-  page:
-    # customize the url of the author page at /blog/authors/<permalink>
-    permalink: '/all-sebastien-lorber-articles'
-  socials:
-    x: battleofplassey
-    linkedin: palash-shrivastava
-    github: battleofplassey
-    # newsletter: https://thisweekinreact.com
+alex:
+  name: Alex Hytha
+  title: Software Engineer
+  url: https://github.com/Hythaam
+  image_url: https://avatars.githubusercontent.com/u/10069262?v=4
 
-palash_writer:
-  name: Palash Shrivastava
-  title: Not a writer, Ssshhh!
-  url: https://github.com/battleofplassey
-  image_url: https://avatars.githubusercontent.com/u/35087196?v=4
-  socials:
-    x: battleofplassey
-    linkedin: palash-shrivastava
-    github: battleofplassey
-
-palash_gamer:
-  name: Palash Shrivastava
-  title: Console War Veteran
-  url: https://github.com/battleofplassey
-  image_url: https://avatars.githubusercontent.com/u/35087196?v=4
-  socials:
-    x: battleofplassey
-    linkedin: palash-shrivastava
-    github: battleofplassey
-
-palash_cinephille:
-  name: Palash Shrivastava
-  title: Life in Movies
-  url: https://github.com/battleofplassey
-  image_url: https://avatars.githubusercontent.com/u/35087196?v=4
-  socials:
-    x: battleofplassey
-    linkedin: palash-shrivastava
-    github: battleofplassey
-
-palash_programmer:
-  name: Palash Shrivastava
-  title: Engineer
-  url: https://github.com/battleofplassey
-  image_url: https://avatars.githubusercontent.com/u/35087196?v=4
-  socials:
-    x: battleofplassey
-    linkedin: palash-shrivastava
-    github: battleofplassey
-
-srashti:
-  name: Srashti Khare
-  title: Engineer
-  image_url: https://media.licdn.com/dms/image/v2/D4D03AQEL1v7pNJJnvA/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1706261869785?e=1757548800&v=beta&t=AaaSSYgQbf585jBhLNSVfX9nhrz2pa2XDMWlZ67wM1Y
-  socials:
-    linkedin: srashti-khare0410
