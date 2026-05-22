@@ -1,21 +1,21 @@
 ---
 slug: context-is-king
-title: "Context Is King: Harnesses, Cost, and Output Quality in Agentic LLM Workflows"
+title: "Context is King: Harnesses, Cost, and Output Quality in Agentic LLM Workflows"
 authors: [hythaam]
 tags: []
 ---
 
-Just a few years ago, "Prompt Engineering" was the fastest growing career in tech. (Probably; I have no data for this at all) Fast forward to today, and it's all but disappeared. So what happened? Models got smarter, agentic workflows were introduced, and recently, AI fluency has become a defactor requirement in the professional world instead of a niche role.
+Just a few years ago, "Prompt Engineering" was the fastest growing career in tech. (Probably; I have no data for this at all) Today, it's all but disappeared from conversation. So what happened? Models got smarter, agentic workflows were introduced, and recently, AI fluency has become a defacto requirement in the professional world instead of a niche role.
 
-More specifically, having smarter models means that a lot of the weird tricks of yesteryear ("You are a genious software engineer. Have fun while completing this task") are no longer applicable. At the same time, the more serious research has moved on to solving task context hydration in the general case (LongRoPE context within LLMs, and RAG hydration in agentic systems).
+Having smarter models means that a lot of the weird tricks that were shared ("You are a brilliant software engineer. Have fun while completing this task") are no longer applicable. At the same time, the more serious research has moved on to solving the general problem of context hydration. (LongRoPE context within LLMs, and RAG hydration in agentic systems).
 
-The last point, that AI fluency has become the expectation rather than the exception, is worth expanding on. Models and agents may be better, but that doesn't mean prompting strategy is irrelevant. As AI use is becoming more central to professional work, it's more important than ever to know how the get the most out of an agent.
+While models and agents may be better, that doesn't mean prompting strategy is irrelevant. As AI use is becoming more central to professional work, it's more important than ever to know how the get the most out of them.
 
 {/* truncate */}
 
-This post is practical guidance for engineers and other AI agent users who already understand software systems but haven't yet built a strong mental model for how agentic LLM workflows actually function under the hood. The goal isn't to make you memorize vocabulary. It's to help you reason about the tradeoffs in your own workflow so you can get better results more consistently.
+This post is intended to provide practical guidance for engineers and other AI agent users who already understand software systems but haven't yet built a strong mental model for how agentic LLM workflows actually function. The goal isn't to memorize vocabulary or give research-level insights, it's to help you reason about context tradeoffs in your own workflow so you can get better results more consistently.
 
-If there's anything to take away from this post, it's that **the model is only one part of the system.** The agent harness (the software that assembles context, advertises tools, and manages the interaction loop) shapes what the model sees, what it can do, and how it executes long-running tasks. Within the harness, context is the working memory that makes LLM inference both useful and expensive.
+If there's anything to take away from this post, it's that **the model is only one part of the system.** The agent harness shapes your interacting with the model, and the model context is the working memory that makes LLM inference both useful and expensive.
 
 Before talking about cost or quality, though, lets briefly define the harness around the model.
 
@@ -23,59 +23,63 @@ Before talking about cost or quality, though, lets briefly define the harness ar
 
 ## Harnesses: the runtime around the model
 
-When people talk about using an AI agent, they usually focus on the model — Claude, GPT, Gemini, or whichever frontier system is in play. The application that actually enables users to do useful work with the model is the **harness**: the control layer that assembles context, exposes functional capabilities, and defines the mode of interaction between the user and model.
+When people talk about using an AI agent, they usually focus on the model — Claude, GPT, Gemini, or whichever brand-name is in play. The application that actually enables users to do useful work with the model is the **harness**: the control layer that assembles context, exposes functional capabilities, and defines the mode of interaction between the user and model.
 
-All of the concepts we'll discuss later (tools, skills, pruning, compaction) lives inside this layer. 
+All of the concepts related to model context that we'll discuss later (tools, skills, pruning, compaction) live inside this layer. 
 
 ### The standard loop
 
-The interaction between you, the harness, and the model follows an incredibly simple cycle:
+The interaction between you and the model follows an incredibly simple cycle:
 
 1. Your request enters the harness.
-2. The harness assembles the context window with the shared system instructions, conversation history, available tool definitions, and any retrieved information.
+2. The harness assembles the context window with system instructions, available tool definitions, and the conversation history,.
 3. The harness sends this assembled context to the model via a provider API call.
 4. The model processes the context and either answers directly, spends time thinking through a reasoning chain, or requests a tool call.
-5. If a tool call is requested, the harness executes the tool and feeds the result back into context for another turn of the loop.
+5. If a tool call is requested, the harness executes the tool and feeds the result into the conversation history for another turn of the loop.
 6. The loop ends when the model produces a final answer or the harness stops it (due to turn limits, token budgets, or other constraints).
 
 :::note
-How does the model signal that it's done? It doesn't "decide" to stop in the way a person would. Instead, the model is trained to generate a special stop token (or, in the case of tool-calling APIs, returns a response without any tool-use requests). The harness interprets this signal as the end of the loop and returns the response to the user.
+How does the model signal that it's done? If no tool call is requested by the model in an API response, the harness will interpret it as the final call in the loop. Some harnesses will allow you to inject requests in-between API calls to provide guidance to the model as well.
 :::
 
 ### Tools
 
 Tools are advertised extensions that the model can invoke through the harness. Models are simple text prediction systems; things like searching a codebase, reading and writing files, executing code, querying a database, or making calls to an [MCP server](https://modelcontextprotocol.io/docs/getting-started/intro) require the model to produce a formatted _tool call block_ to request the harness to perform an action on it's behalf.
 
-For the purpose of this discussion, the most important piece is that **tool outputs become part of the working context.** Every search result, file read, or API response the model requests gets appended to the conversation, consuming tokens and bringing more information to compete for the model's attention with everything else in the context window.
+> There are a few tool calling standards used by models under the hood. Models are trained to output a specific format, but the API layer usually handles extracting the call into a separate part of the API response. It isn't 100% accurate, so a lot of harnesses will also have some recovery code in case a malformed tool call gets passed as part of the conversation instead.
+
+For the purpose of this discussion, the most important piece is that **tool definitions and outputs become part of the working context.** Every tool the model is given access to, and the resulting search, file read, or API response the model requests gets appended to the conversation, consuming tokens and bringing more information to compete for the model's attention with everything else in the context window.
 
 ### Context management
 
 As the loop runs, the conversation grows and tool results accumulate. The context continues to fill with each call and response. Harnesses manage this growth through two primary mechanisms:
 
-- **Pruning** removes stale or low-value context. The harness will discard old tool outputs, trim earlier turns of conversation, or drop information that is no longer relevant to the current task.
+- **Pruning** removes stale or low-value context. The harness may discard old tool outputs, trim earlier turns of conversation, or drop information that it decides is no longer relevant to the current task.
 - **Compaction** replaces a long history with a shorter retained state. Rather than keeping every turn of a long-running conversation, the harness can [summarize the conversation so far](https://platform.claude.com/docs/en/build-with-claude/compaction) into a condensed block that preserves the most important information while discarding the raw back-and-forth.
 
-We'll return to these mechanisms in more detail later, but the important takeaway is that the harness has a few options for managing context when it grows beyond the model limits.
+We'll return to these mechanisms in more detail later; harnesses have a few options for managing context when it grows beyond the model limits, but there are quality implications to both strategies.
 
-### Why this matters
+### Why it matters
 
 The harness is the layer that controls what the model sees and what it can do; how the harness manages the context impacts the cost and quality of the result almost as much as the underlying model being used. Context is the entire working set of information that is processed on every turn of the loop, and its size, shape, and freshness determine both how much you pay for each request and the quality of the returned response.
 
+Every LLM provider has more than one harness for use with their models, and there are hundreds of third-party options. They all have slightly different strategies for managing context, tooling, and interaction. These nuances can lead to significantly different cost and quality differences even when the workflow and underlying model remains the same.
+
 ---
 
-## Costs: why context discipline matters even when subscriptions hide it
+## Costs: context discipline matters even when subscriptions hide it
 
-Model selection is the most apparent cost when using an AI model. Small or old models are cheaper, while large frontier models are expensive. While rates change depending on the model, the other component of billing is your token usage. Even though most providers makes token usage feel invisible, understanding what drives cost helps you reason about efficiency, which directly informs how far your workflow can stretch.
+Model selection is the most apparent cost when using an AI model. Small or old models are cheaper, while large frontier models are expensive. Rates change depending on the model, but the read driver of billing is token usage. Most providers make token usage feel invisible, but understanding what drives cost helps you reason about efficiency, which directly informs how far your workflow can stretch.
 
 ### Tokens: the billing unit
 
-Every interaction with an LLM is measured in **tokens**. Tokens are the atomic units the model reads and writes.
+Every interaction with an LLM is measured in **tokens**; the atomic units the model reads and writes.
 
 :::note
 A token is not quite a word and not quite a character. Depending on the model, one token averages roughly three-quarters of a word in prose. Code, logs, JSON, and structured outputs are often less token-efficient: a line of code that looks short may consume significantly more tokens than an equivalent-length sentence of natural language.
 :::
 
-This matters because long-running agent loops don't just send a prompt once. Each turn of the harness loop resends the accumulated context — system prompt, conversation history, tool definitions, and all prior tool outputs — plus whatever new information was added on the last turn. The model processes the full context on every turn, and you pay for it each time.
+Long-running agent loops don't just send a prompt once. Each turn of the harness loop resends the accumulated context — system prompt, conversation history, tool definitions, and all prior tool outputs. It then appends whatever new information was added on the last turn. The model processes the full context on every turn, and you (mostly) pay for it each time.
 
 ### Token pricing
 
@@ -84,16 +88,16 @@ Most provider APIs charge less for **input tokens** (what you send to the model)
 The practical consequence is that a "cheap" model can still become expensive if you feed it bloated, undisciplined context on every turn that leads to low-quality, verbose output. Conversely, a more capable and expensive model used with lean, well-shaped context can end up costing less per task than a cheaper model drowning in noise.
 
 :::note
-It's not always huge difference, but how a model converts text into tokens can impact costs in ways that aren't immediately obvious. Anthropic's Opus 4.7 has the same per-token cost as Opus 4.6, but it actually uses ~35% more tokens for the same input.
+It's not always huge difference, but how a model converts text into tokens can impact costs in ways that aren't immediately obvious. Anthropic's Opus 4.7 has the same per-token cost as Opus 4.6, but it actually uses ~35% more tokens for the same text.
 :::
 
 ### Prompt caching
 
-Provider APIs offer **prompt caching** to reduce cost and latency when the leading portion of the prompt stays stable across requests. When you send a request, their system checks if a prefix of your prompt matches something already cached from a recent call. If it does, the cached portion is reused at a [significantly reduced cost — often 90% cheaper than processing it fresh](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+Provider APIs offer **prompt caching** to reduce cost and latency when the leading portion of the prompt (which includes your system prompt and conversation history) stays stable across requests. When you send a request, their system checks if a prefix of your prompt matches something already cached from a recent call. If it does, the cached portion is reused at a [significantly reduced cost — often 90% cheaper than processing it fresh](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
 
-Cache reuse rewards **stable prefixes**. Harnesses take advantage of this by keeping your system prompt, tool definitions, and other often-repeated context at the front of the prompt where they can be matched across requests. It can also reduce the cost of long-running conversations, where early parts of the context remain unchanged every round.
+Cache reuse rewards **stable prefixes**. Harnesses can take advantage of this by keeping your system prompt, tool definitions, and other often-repeated context at the front of the prompt where they can be matched across requests. Some will even allow you to fork a conversation so you can return to an earlier version with an already-cached prompt. Caching can significantly reduce the cost of long-running conversations, where early parts of the context remain unchanged every round.
 
-In practice, this means prompt construction isn't just about what information the model needs. It's also about structuring that information so the expensive parts stay cached.
+When building custom agentic systems, this means prompt construction isn't just about what information the model needs. It's also about structuring that information so the expensive parts stay cached. For harness users, understanding prompt caching can help optimize cost if you're able to re-use the same conversation context for multiple tasks.
 
 :::note
 #### Subsidized Inference
@@ -103,13 +107,15 @@ If you're using an AI agent through a higher-tier subscription plan, inefficient
 Even so, cost-awareness is still a useful skill to build now. The current economics of inference are being shaped by competition and market-building. Long-term inference pricing will likely look different from the present moment. Understanding what drives cost means you'll be prepared to optimize when and where it matters, and you'll get better results in the meantime because the same decisions that reduce cost also tend to improve output quality.
 :::
 
-That brings us to the second half of the story. The same context decisions that drive token cost also affect whether the model can reliably use the information you give it — which can further drive up costs if more prompting is required to produce a satisfactory output.
+While prompt caching significantly reduces the cost of maintaining large contexts, that can hide another issue: large or irrelevant information in the context can degrade a model's ability to reason about the problem at hand, which can result in _more_ output tokens being used to reach a quality output.
+
+That brings us to the second half of the story. The same context decisions that drive token cost also affect whether the model can reliably use the information you give it, which can further drive up costs if more prompting is required to produce a satisfactory output.
 
 ---
 
 ## Output quality: how context impacts performance
 
-It's tempting to assume that more context means better answers. After all, a model can't reason about information it doesn't have! But research and practice both show that this assumption has some important pitfalls. Larger available context windows do not automatically solve retrieval, salience, or reasoning problems even when all of the needed information is technically present.
+It's tempting to assume that more context means better answers, but research and practice both show that isn't the case. The larger available context windows in the latest frontier models haven't automatically solve retrieval, salience, or reasoning problems even when all of the needed information is technically present.
 
 ### Fact retrieval degrades with context length
 
@@ -135,27 +141,29 @@ Beyond positional effects, there is a broader phenomenon called **context rot**:
 
 ### The upshot
 
-These are all context-construction problems, and there are solutions to all of them available to users. So if long context can weaken retrieval and reasoning, the question becomes: how do you construct context so the right information stays salient?
+These are all context-construction problems, and there are solutions to all of them available to users. So if long context can weaken retrieval and reasoning, the question becomes: how do you construct context so the right information stays salient? More broadly, how do you get the most useful output from an agent with the lowest cost?
 
 ---
 
 ## Context building: keeping the working set useful
 
-Context building is how you respond to the problems described above. The goal is not maximum context, it's **useful context**: a working set small enough to keep the model focused and rich enough provide the information necessary for the task at hand.
+Context building is how you respond to the problems described above. The goal is not to fill the agent's context, it's to add only **useful context**: a working set small enough to keep the model focused and rich enough provide the information necessary for the task at hand.
 
 Think of context building as an engineering activity. It's the process of designing the information environment the model will operate in, and the quality of that environment directly determines the quality of the output.
 
 ### System prompt
 
-The system prompt is a durable instruction layer provided by whatever agent is being run by the harness. It anchors the model's behavior, identity, and constraints across every turn of the conversation. The system prompt remains stable at the front of the context window, where it benefits from both positional salience and prompt caching.
+The system prompt is a durable instruction layer provided by whatever agent is being run by the harness. It defines the model's behavior, identity, and constraints across every turn of the conversation. The system prompt remains stable at the front of the context window, where it benefits from both positional salience (due to the "missing middle") and prompt caching.
 
-A well-crafted system prompt preserves key rules even as the rest of the context drifts. It's where you define tone, safety constraints, output format expectations, and the behavioral boundaries that define the role of the agent as a tool for the user.
+A well-crafted system prompt preserves key rules even as the rest of the context drifts. It's where you define the persona, safety constraints, output format expectations, and the behavioral boundaries that define the role of the agent as a tool for the user.
 
 :::note
-The system prompt for most agent harnesses is hardcoded by the developer. However, some tools and platforms allow you to modify it to some degree — for example, through files like `CLAUDE.md` in Claude Code, custom instructions in ChatGPT, or system message fields in API-based applications. If your harness supports it, this is one of the highest-leverage points for improving output quality.
+The system prompt for most agent harnesses is hardcoded by the developer. However, some tools and platforms allow you to modify it — for example, through files like `CLAUDE.md` in Claude Code, custom instructions in ChatGPT, or system message fields in API-based applications. If your harness supports it, this is one of the highest-leverage points for improving output quality.
 
 Most of the larger commercial applications will only allow you to append new sections to the system prompt, but some smaller open source projects allow it to be overwritten entirely.
 :::
+
+The worst quality issues happen when the system prompt is misaligned with the task at hand, e.g. asking a marketing agent for a bash script, or asking a planner to write tests. At best the agent will fail. At worst, it may struggle against the restrictions in the system prompt and complete the task with a significant token spend and extremely low quality.
 
 ### Tools
 
@@ -163,7 +171,13 @@ Tools expand what the model can *do* — search, read, write, compute, query. Le
 
 Tool design matters for output quality. A well-designed tool returns scoped, well-shaped output that's easy for the model to use — a focused search result, a specific file section, a clean API response. A poorly designed tool dumps verbose, unstructured output into context, recreating exactly the retrieval and attention problems described in the previous section.
 
-Since the model needs to be made aware of the available tools, each one has to be included in the model context. Having too many tools loaded or having tools that aren't applicable to the task at hand will increase the context length and reduce output quality.
+Since the model needs to be made aware of the available tools, each one has to be included in the model context. Having too many tools loaded or having tools that aren't applicable to the task at hand will increase the context length and reduce output quality. Limiting the available tool selection can increase the agent's reasoning quality, but can also handicap the agent if it doesn't have access to the tools it needs.
+
+Conversely, tools that are overly specific can also reduce quality. Agents are trained (and therefore more capable with) general tools like file readers and web search. Highly specific tools like documentation search may not be as useful to the agent as a general web search. Always be considerate when giving an agent access to a tool.
+
+:::note
+While highly specific tools may reduce quality, they might be necessary to keep certain security/correctness guarentees. When building agents with very constrained behavioral expectations, specific tools may be a necessity. Giving an agent access to a database query utility might be a disaster if it generates an expensive query, so a more specific tool that only allows the use of certain indexes or access limits may be preferable.
+:::
 
 ### Skills
 
@@ -173,9 +187,19 @@ Skills are modular instruction or workflow packages that can be loaded only when
 
 This design directly addresses the context efficiency issues that normal tools introduce. Instead of loading everything into the context at once, specific instructions and guidance stay out of the context until it's actually relevant, reducing background clutter and preserving the model's attention budget for the information that matters right now. In the same way that tools allow the model to load new working data into the context on the fly, skills essentially allow the model to load new tools.
 
+Keep in mind that, while skills are progressively disclosed, the skill descriptions are always given to the agent to determine if they're necessary. Making hundreds of skills available can still add noise to your context, and having multiple similar skills can make it more difficult for an agent to decide that any single one is relevant to the task at hand.
+
 :::note
-Tools and skills are not commands. No amount of "YOU MUST DO THIS" will make an LLM as deterministic as a traditional program. Tools will go unused, skills will be misapplied, and workflow checklists will be ignored. Don't depend on an agent alone for any task that requires absolute adherence to policy, and _never_ provide it carte-blanche access to sensitive systems.
+Tools and skills are not commands. No amount of "YOU MUST DO THIS" will make an LLM as deterministic as a dedicated application. Tools will go unused, skills will be misapplied, and workflow checklists will be ignored. Don't depend on an agent alone for any task that requires absolute adherence to policy, and _never_ provide it carte-blanche access to sensitive systems.
+
+If strict adherence to a workflow is required, include a script in the skill to execute the task.
 :::
+
+A good skill adds reusable procedure, structure, or domain judgment that makes the agent measurably more effective at a class of tasks. Be skeptical of anything that adds tokens without adding much capability. A skill that injects 2,000 tokens of generic advice on every prompt is a net negative; the harm from increasing context length will almost certainly outweigh any marginal benefit the advice could provide. The best skills are focused, modular, and loaded only when they're relevant.
+
+Conversely, a small skill that is only useful in highly-specific circumstances can also be harmful. The skill description will be included in many contexts where it doesn't provide value, and when the skill _is_ relevant, the model may have been able to accomplish the task without the skill anyway (albiet with an increased token count for those few instances).
+
+The most useful skills are ones that provide the agent context for a task within your personal working domain. Skills that point out which folders contain shared marketing material or that provide example commands for connecting to a database instance are irreplacable — the agent may have no other way of finding out that information. Design best practices, or project layout information is much less valuable. The first is likely already part of the underlying model's training data, and the second can be easily discovered via another tool call.
 
 ### Agents and prompts
 
@@ -189,7 +213,7 @@ This is also where agent specialization becomes valuable. Rather than using one 
 - A **research agent** that has access to web search and document retrieval but doesn't need file-editing capabilities (and the associated context bloat)
 - A **writing agent** that works with style guides and reference documents but doesn't need a code execution environment.
 
-Each specialized agent carries a leaner context with fewer tool definitions, more focused instructions, and less noise.
+Each specialized agent can carry a leaner context with fewer tool definitions, more focused instructions, and less noise.
 
 ### Subagents
 
@@ -197,7 +221,11 @@ Subagents are a way to allow an agent to isolate side work in an independent con
 
 Without subagents, every subsidiary task expands the main context — adding tool outputs, intermediate reasoning, and exploratory dead ends to a window that's already trying to track the primary task. With subagents, the main thread stays clean and focused.
 
-Because each subagent starts with a fresh context window, multiple sub-agents can share the same cached context. And because subagents handle isolated workstreams, it's easy to switch to smaller, cheaper models for simpler tasks while reserving more capable models for complex tasks.
+Because each subagent starts with a fresh context window, multiple sub-agents can share the same cached context. Because subagents handle isolated workstreams, it's easy to switch to smaller, cheaper models for simpler tasks while reserving more capable models for complex tasks.
+
+:::note
+It's tempting to view subagents as _just_ a way to perform some parts of a task with a cheaper agent, but you should always be skeptical of whether or not the savings will materialize. Cheaper agents often need to use more tokens for a given task (particularly if you're aiming for the same level of quality), which can end up equalizing the cost. For the kind of automated workflows that subagents are used for, make sure you regularly test different models to see how the real costs compare!
+:::
 
 ---
 
@@ -209,10 +237,10 @@ The mechanisms above are how the harness manages context, but many of the most i
 
 When you give the model a task, include the goal, the constraints, any prior attempts, the expected output format, and anything you already know about the problem. Don't make the model guess at information you have.
 
-This isn't just about being a "good prompter." It's about the retrieval problem. In a long context window, the model has to identify which information is relevant to the current task. Specific, well-structured instructions make the important facts easier to find and harder to bury under noise. Even if the model can technically access the information through it's own tools, providing it upfront (or just telling it to retrieve that data specifically) can dramatically reduce the number of tokens the model will use just to figure out that the data is necessary.
+In a long context window, the model has to identify which information is relevant to the current task. Specific, well-structured instructions make the important facts easier to find and harder to bury under noise. Even if the model can technically access the information through it's own tools, providing it upfront (or just telling it to retrieve that data specifically) can dramatically reduce the number of tokens the model will use just to figure out that the data is necessary. In the worst case, allowing a model to learn for itself that a particular approach to the problem won't work will cost more tokens _and_ leave a large chunk of information in the context window that is directly misleading the agent in future rounds of conversation.
 
 :::note
-Remember that input tokens are cheaper than output tokens, so letting a model think for several paragraphs before it requests a tool call on it's own will be more expensive than just telling it to read the file
+Remember that input tokens are cheaper than output tokens. Even letting a model think for several paragraphs before it requests a tool call on it's own will be more expensive than just telling it to read the file. The only reason to withold that kind of information is if you're trying to verify whether or not the information itself is relevant. If you need to confirm your suspicion that a particular file has a bug, telling it "find the bug in this file" will be counterproductive. 
 :::
 
 Tell the model to clarify ambiguities rather than letting it silently guess. A clarifying question costs a few tokens, but will help prevent the model exploring an incorrect path.
@@ -227,29 +255,32 @@ This means:
 - **Break large tasks into smaller steps** rather than dumping an entire project specification into one prompt. Smaller tasks mean smaller contexts, which means better reasoning.
 - **Review and redirect** rather than hoping the model gets everything right on the first try. Iteration is normal and expected.
 
+### Treat the interaction like magic, not mentorship
+
+On the other hand, LLMs can be very useful for analyzing from huge amounts of unstructured data. When you have no idea where to even start with an issue, it can be surprisingly helpful to simply dump a ton of possibly-relevant data into the context window and asking what's going on. With this kind of interaction, the goal should be to output some **insight** rather than to perform a **task**.
+
+This means:
+- **Load whatever data that might be relevant**, including text files, documentation, or logs. Make sure to inform the agent where the data comes from and what it (probably) represents.
+- **Be mindful about your own assumptions**. If you aren't absolutely certain of something, be careful about telling the agent. Providing speculation may lead the agent down the wrong reasoning chain.
+- **Check and recheck** the resulting insight. Starting a new session and providing a slightly different set of inputs can confirm results. For example, if the agent claims the logs show a bug in one of the source code files you provided, asking the same question with the source code excluded should confirm whether the logs actually point to that source code file, or if your inclusion of the file led the agent to make an assumption.
+
+These kinds of sessions are generally more expensive (particularly if you're regenerating similar large context prompts repeatedly), but they can provide insights that would otherwise take significantly more time. Once an insight is generated, it's generally better to extract those details into a new session rather than continuing, since the large raw data in the context probably can't provide further value for more task-oriented conversations.
+
 ### Compact or reset when context gets stale
 
 When a conversation becomes long, repetitive, or stale (or when you've extracted the specific answers you needed from an earlier exchange) consider compacting or starting a new session. Most agent harnesses support this automatically or through an explicit action.
 
-The goal of compaction is to preserve only what still matters: goals, decisions made, constraints, open questions, and source-of-truth facts. Everything else (the exploratory back-and-forth, verbose tool outputs, intermediate reasoning steps, etc.) gets summarized or discarded.
+The goal of compaction is to preserve only what still matters: goals, decisions made, constraints, open questions, and source-of-truth facts. Everything else (the exploratory back-and-forth, verbose tool outputs, intermediate reasoning steps, etc.) gets summarized or discarded. Harnesses generally ask the underlying model to perform compaction directly, and differences in the prompt used by the harness can change the quality or focus of the compacted information.
 
 If the context has become stale, (whether because the task has drifted or the underlying data has changed since the last interaction) it may be better to start fresh than to rely on the model to compact the context. Use what you learned over the course of that interaction to provide a more concise and up-to-date context to the new session.
 
-### Don't rely on the model to assemble all context for you
+### Don't rely on the model to assemble context for you
 
 The harness does its best to build a useful context window, but you often know important facts that the harness does not. You know which files are relevant. You know what you tried yesterday. You know the business constraint the model has never been told about.
 
-Participate actively in context selection and shaping. Paste in relevant code snippets. Link to the right documentation. State your constraints explicitly. The model is good at working *with* information — but it can only work with what it has.
+Participate actively in context selection and shaping. Paste in relevant code snippets, link to the right documentation and state your constraints explicitly. The model is good at working *with* information, but it can only work with what it has.
 
-If you suspect that there is some insight that's important in a pile of raw data, start a new session with another agent to extract the insight before handing it back to the main agent. It's better to start a new session than to let all of the raw data pollute the context for the rest of the task.
-
-### Be deliberate about skill quality
-
-If your harness supports skills or custom instructions, treat them as engineering artifacts. A good skill adds reusable procedure, structure, or domain judgment that makes the agent measurably more effective at a class of tasks.
-
-Be skeptical of anything that adds tokens without adding much capability. A skill that injects 2,000 tokens of generic advice on every prompt is a net negative; the harm from increasing context length will almost certainly outweigh any marginal benefit the advice could provide. The best skills are focused, modular, and loaded only when they're relevant.
-
-Conversely, a small skill that is only useful in highly-specific circumstances can also be harmful. The skill will be included in many contexts where it doesn't provide value, and when the skill _is_ relevant, the model may be able to accomplish the task without the skill anyway (albiet with an increased token count).
+Even in the agent can discover the information on it's own, directly providing details you know are relevant will save time and tokens and increase quality.
 
 ---
 
@@ -274,13 +305,10 @@ Being specific in your prompts, breaking large tasks into smaller ones, compacti
 - OpenAI, [Prompt guidance](https://developers.openai.com/api/docs/guides/prompt-guidance)
 - OpenAI, [Function calling](https://developers.openai.com/api/docs/guides/function-calling)
 - OpenAI, [What are tokens and how to count them?](https://help.openai.com/en/articles/4936856-what-are-tokens-and-how-to-count-them)
-- OpenAI, [API Pricing](https://openai.com/api/pricing/)
 - Model Context Protocol, [What is MCP?](https://modelcontextprotocol.io/docs/getting-started/intro)
 - Liu et al., [Lost in the Middle: How Language Models Use Long Contexts](https://aclanthology.org/2024.tacl-1.9/) (TACL 2024)
 - Ling et al., [LongReason: A Synthetic Long-Context Reasoning Benchmark via Context Expansion](https://arxiv.org/abs/2501.15089) (arXiv 2025)
 - Chroma, [Context Rot: How Increasing Input Tokens Impacts LLM Performance](https://www.trychroma.com/research/context-rot)
 - Claude Code docs, [Create custom subagents](https://code.claude.com/docs/en/sub-agents)
-
-### More Sources
 - Addy Osmani, [Agent Skills](https://addyosmani.com/blog/agent-skills/)
-- 
+- Anthropic, [How Claude Code works in large codebases](https://claude.com/blog/how-claude-code-works-in-large-codebases-best-practices-and-where-to-start)
