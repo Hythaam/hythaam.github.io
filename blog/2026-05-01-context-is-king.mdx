@@ -46,7 +46,9 @@ How does the model signal that it's done? If no tool call is requested by the mo
 
 Tools are advertised extensions that the model can invoke through the harness. Models are simple text prediction systems; things like searching a codebase, reading and writing files, executing code, querying a database, or making calls to an [MCP server](https://modelcontextprotocol.io/docs/getting-started/intro) require the model to produce a formatted _tool call block_ to request the harness to perform an action on it's behalf.
 
-> There are a few tool calling standards used by models under the hood. Models are trained to output a specific format, but the API layer usually handles extracting the call into a separate part of the API response. It isn't 100% accurate, so a lot of harnesses will also have some recovery code in case a malformed tool call gets passed as part of the conversation instead.
+:::note
+There are a few tool calling standards used by models under the hood. Models are trained to output a specific format, but the API layer usually handles extracting the call into a separate part of the API response. It isn't 100% accurate, so a lot of harnesses will also have some recovery code in case a malformed tool call gets passed as part of the conversation instead.
+:::
 
 For the purpose of this discussion, the most important piece is that **tool definitions and outputs become part of the working context.** Every tool the model is given access to, and the resulting search, file read, or API response the model requests gets appended to the conversation, consuming tokens and bringing more information to compete for the model's attention with everything else in the context window.
 
