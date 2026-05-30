@@ -14,8 +14,11 @@ In Progress
 ### Notes:
 - Why does the generator/judge split work?
   - Naive approaches: multiple models
+    - Can reduce per-token costs, but not necessarily task cost
   - Separate out context
-  - Prompt differences
+    - Task executions poison context. It's much harder to ask an agent "is this correct" when it just went through the reasoning process to justify it.
+  - Prompt differences.
+    - Unique prompts can help isolate the actual intent from incidental requirements present in each prompt
 - How to implement
   - Orchestration layer
   - Context isolation

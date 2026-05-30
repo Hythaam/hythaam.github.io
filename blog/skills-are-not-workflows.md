@@ -18,6 +18,8 @@ In Progress
 - _Workflows_ (defined as deterministic event sequences) are agent harnesses
   - Harnesses are code that manages agentic conversations
 
+> Specifically, skills should not define strict requirements. They're too flakey to be relied on for critical rules.
+
 ### References:
 
 ### Necessary research:
